@@ -1,0 +1,41 @@
+# Copy to config.toml and make it yours. config.toml is gitignored.
+
+[panel]
+address = ""            # leave empty to auto-scan for LED_BLE_*; `python morning.py scan` prints it
+day_brightness = 60     # 1-100
+night_brightness = 5
+on_at = "06:55"         # stored on the panel itself by `python morning.py schedule`
+off_at = "00:30"
+
+[location]              # weather from open-meteo.com, no key needed
+lat = 52.37
+lon = 4.90
+
+[board]
+name = "Danil"
+seconds_per_card = 3
+sign_off = "GO GET IT"
+
+# One line that shows up on a given weekday (8 chars per line, 2 lines max).
+[today]
+mon = "GYM 18:00"
+fri = "TALK 11:00"
+
+[breakfast]             # rotates daily
+options = ["OATS", "EGGS TOAST", "YOGURT", "PANCAKES", "OMELETTE"]
+
+# Icons: sun cloud rain snow shower food coffee run book bag tooth moon heart
+[routine]
+weekday = [
+  { icon = "tooth",  label = "BRUSH TEETH" },
+  { icon = "shower", label = "SHOWER" },
+  { icon = "food",   label = "{breakfast}" },
+  { icon = "coffee", label = "COFFEE" },
+  { icon = "bag",    label = "PACK BAG" },
+]
+weekend = [
+  { icon = "run",    label = "RUN 5K" },
+  { icon = "shower", label = "SHOWER" },
+  { icon = "food",   label = "{breakfast}" },
+  { icon = "book",   label = "READ 20 MIN" },
+]

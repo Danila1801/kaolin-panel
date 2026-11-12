@@ -1,0 +1,3 @@
+pypixelcolor>=0.5
+bleak
+pillow
