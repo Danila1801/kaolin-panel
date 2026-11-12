@@ -2,3 +2,6 @@
 config.toml
 preview/
 __pycache__/
+.panel_slots.json
+kaolin_daemon.log*
+build/

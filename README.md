@@ -1,65 +1,54 @@
-# pixel-morning
+# kaolin-panel
 
-I bought a 32x32 LED pixel panel at Action for about 10 EUR. It only works with a phone app, and the USB cable only powers it, so my laptop couldn't see it. I didn't want another toy that needs the app, so I asked an AI coding agent (Claude Code) to find the panel and make it useful. One evening later it sits next to my bed and runs my morning.
+My desk has a 10 EUR LED panel from Action. When Claude finishes a reply, Kaolin, my Earth Spirit avatar, spins his staff on it, with green light on both ends. I don't have to keep checking the app anymore. I just look at the desk.
 
-![the morning board](docs/demo.gif)
+| Claude finished | Claude needs my OK | Claude is working |
+|---|---|---|
+| ![done](docs/kaolin_done.gif) | ![waiting](docs/kaolin_waiting.gif) | ![working](docs/kaolin_working.gif) |
 
-## What it does
+## How it works
 
-Every morning the panel plays a short loop:
-
-1. **GOOD MORNING** + the date
-2. **Weather** for my area (open-meteo, no API key): icon, temperature now, high/low, and **UMBRELLA** when rain is likely
-3. **Today's one thing** (for example `TALK 11:00` on Friday), set per weekday
-4. **The routine**, one card per step with a progress bar: teeth, shower, **what to eat** (rotates daily so I don't have to decide), coffee, pack bag. Weekends get a different list.
-5. A sign-off
-
-At night it turns into a dim clock. The panel also stores its own on/off times, so it goes dark at 00:30 and wakes at 06:55 even with no computer around.
-
-![all cards](docs/cards.png)
-
-## How the agent figured out the hardware
-
-- Windows showed no new USB device, so the cable is power only.
-- A Bluetooth LE scan found `LED_BLE_09A5AAEB`, the strongest signal in the room.
-- Its GATT services (`fa02` write / `fa03` notify) match the **iPixel Color** protocol that the community has reverse engineered ([pypixelcolor](https://github.com/lucagoc/pypixelcolor), [protocol notes](https://github.com/cagcoach/ha-ipixel-color/blob/main/iPIXEL-Protocol-Documentation.md)).
-- Reading the device info gave a 32x32 screen. A test message showed up on it, and that was enough to start building.
-
-Everything on the board is drawn pixel by pixel: a hand-made 3x5 font (8 characters per line) and 12x12 icons, so it stays sharp instead of looking like a blurry, downscaled image.
-
-## Run it
-
-Windows, macOS or Linux with Bluetooth, Python 3.11+.
-
-```bash
-python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt     # macOS/Linux: .venv/bin/pip
-cp config.example.toml config.toml                # edit routine, location, breakfasts
-python morning.py scan        # finds the panel, put the address in config.toml
-python morning.py preview     # renders preview/board_big.gif, no panel needed
-python morning.py push        # sends today's board to the panel
-python morning.py night       # dim clock
-python morning.py schedule    # stores on/off times on the panel itself
-python morning.py text "GM"   # quick message
+```
+Claude Code hook (Stop / Notification / UserPromptSubmit)
+  -> hook.py: one UDP packet to 127.0.0.1:47474, returns instantly
+  -> kaolin_daemon.py: started at login, keeps the Bluetooth link to the panel open
+  -> panel: show_slot(n)
 ```
 
-Close the phone app first. The panel takes only one Bluetooth connection at a time.
+- **The panel** is a 32x32 "iPixel Color" display. Its USB cable only supplies power, so it sits on a phone charger on the desk, and the laptop talks to it over Bluetooth LE. I found it with a BLE scan (`LED_BLE_*`), then matched its GATT services (`fa02`/`fa03`) to the protocol the community reverse engineered ([pypixelcolor](https://github.com/lucagoc/pypixelcolor)).
+- **The art** comes from Kaolin, my desktop pet. Its 64x64 sprite sheet already had a staff spin. `kaolin_frames.py` cuts the rows out, crops every animation to one shared box, scales them to 32x32 and pushes the jade glow to full LED green so the staff tips read from across the room. The sheet itself is not in this repo.
+- **Speed.** The four animations are stored in the panel's own slots once. They survive power-off, and the daemon only re-uploads them when the GIFs change. After that, changing state is one tiny Bluetooth write (~30 ms) instead of a GIF upload (~8 s).
+- **States:**
+  - `done`: staff spin for 5 s, then calm idle
+  - `waiting`: Grip cast when Claude asks for permission. The 60 s "waiting for input" reminder is ignored.
+  - `working`: dim, Kaolin resting
+  - After 20 min without anything new, the panel dims itself.
+- **Robustness.** If the panel is unplugged, the daemon reconnects on its own within 30 s. If it's already running, a second copy exits (the UDP port is taken). If an upload doesn't get an ack, it retries.
 
-### Automatic every morning (Windows)
-
-`install_task.ps1` sets up two Task Scheduler jobs: `push` at 07:00 (it can wake the laptop) and `night` at 23:00.
+## Set it up (Windows)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install_task.ps1
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+copy config.example.toml config.toml        # set [panel] address (python morning.py scan)
+.venv\Scripts\python kaolin_frames.py       # builds build\*.gif from the pet sheet
+.venv\Scripts\pythonw kaolin_daemon.py      # or put a shortcut to this in shell:startup
 ```
 
-## Limits
+Then add the hooks to `~/.claude/settings.json`:
 
-- The panel can't fetch anything by itself, so something with Bluetooth has to push the board. Here that's my laptop. An always-on version would be a ~5 EUR ESP32 next to the bed running the same commands.
-- The panel's built-in schedule only switches power on and off. It can't change content.
+```json
+"hooks": {
+  "Stop":             [{ "hooks": [{ "type": "command", "command": "python", "args": ["-I", "C:/path/hook.py", "done"],    "async": true, "timeout": 5 }] }],
+  "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "python", "args": ["-I", "C:/path/hook.py", "working"], "async": true, "timeout": 5 }] }],
+  "Notification":     [{ "hooks": [{ "type": "command", "command": "python", "args": ["-I", "C:/path/hook.py", "waiting"], "async": true, "timeout": 5 }] }]
+}
+```
 
-## Files
+Test without Claude: `python hook.py done`. `python kaolin_daemon.py stop` frees the panel for the phone app, because it only takes one Bluetooth connection at a time.
 
-- `morning.py`: the CLI, data (weather, routine) and the panel commands
-- `pixels.py`: the 32x32 renderer (font, icons, card layouts, preview export)
-- `config.example.toml`: copy it to `config.toml` and make it yours
+## Side quest: morning board
+
+The first idea was a bedside morning board: weather, routine steps and what to eat. It works (`python morning.py push`), but text at 32x32 is hard to read from bed, so Kaolin took the panel. Code is in `morning.py` + `pixels.py`.
+
+![morning board](docs/demo.gif)
